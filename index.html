@@ -63,7 +63,8 @@
             <div class="control-grid">
               <label class="search">
                 <span>Command Search</span>
-                <input id="searchInput" type="search" placeholder="Filter commands and steps (e.g. kerberoast, smb, nmap)">
+                <input id="searchInput" type="search" placeholder="Filter commands and steps (e.g. kerberoast, smb, nmap)" aria-describedby="searchHint">
+                <small id="searchHint" class="search-hint" aria-live="polite" hidden></small>
               </label>
               <div class="hero-buttons">
                 <button id="expandBtn" class="chip chip-outline" type="button">

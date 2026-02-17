@@ -481,6 +481,17 @@ button.chip {
   box-shadow: 0 0 0 1px color-mix(in srgb, #ff8f52 50%, transparent);
 }
 
+.search-hint {
+  margin: 0.08rem 0 0;
+  font: 600 0.7rem/1.2 "Cascadia Mono", "Consolas", monospace;
+  color: #ff8f52;
+  letter-spacing: 0.04em;
+}
+
+:root[data-theme="light"] .search-hint {
+  color: #b9502f;
+}
+
 .hero-buttons {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1480,6 +1491,22 @@ body.modal-open {
 .snippet-block pre code.hljs,
 .snippet-block pre code.hljs * {
   color: var(--snippet-code) !important;
+}
+
+.snippet-block pre code .snippet-search-hit,
+.snippet-block pre code.hljs .snippet-search-hit {
+  color: #ff8f52 !important;
+  background: color-mix(in srgb, #ff8f52 22%, transparent) !important;
+  border: 1px solid color-mix(in srgb, #ff8f52 48%, transparent);
+  border-radius: 4px;
+  padding: 0 0.14em;
+  font-weight: 700;
+}
+
+:root[data-theme="light"] .snippet-block pre code .snippet-search-hit,
+:root[data-theme="light"] .snippet-block pre code.hljs .snippet-search-hit {
+  color: #b9502f !important;
+  background: color-mix(in srgb, #ff8f52 28%, transparent) !important;
 }
 
 .task-card.is-hidden,

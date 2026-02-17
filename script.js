@@ -2105,6 +2105,7 @@ const SNIPPET_LANG_ALIASES = {
 };
 const GROUP_METADATA = {};
 const COPY_FEEDBACK_DURATION_MS = 950;
+const MIN_SEARCH_CHARS = 3;
 
 const dom = {
   phaseNav: document.getElementById('phaseNav'),
@@ -2112,6 +2113,7 @@ const dom = {
   progressText: document.getElementById('progressText'),
   progressFill: document.getElementById('progressFill'),
   searchInput: document.getElementById('searchInput'),
+  searchHint: document.getElementById('searchHint'),
   resetBtn: document.getElementById('resetBtn'),
   expandBtn: document.getElementById('expandBtn'),
   collapseBtn: document.getElementById('collapseBtn'),
@@ -2142,6 +2144,13 @@ initTheme();
 renderNav();
 renderPhases();
 updateProgress();
+if (dom.searchInput) {
+  dom.searchInput.value = '';
+}
+if (dom.searchHint) {
+  dom.searchHint.textContent = '';
+  dom.searchHint.setAttribute('hidden', '');
+}
 applyFilter('');
 
 bindEvents();
@@ -2329,6 +2338,9 @@ function renderPhases() {
       const metaEl = node.querySelector('.task-meta');
       const snippetBtn = node.querySelector('.task-snippet-btn');
       const snippetStack = node.querySelector('.snippet-stack');
+      const snippetRefs = [];
+      const snippetState = { autoExpandedBySearch: false, hasSearchHighlight: false };
+      const snippetCount = Array.isArray(task.snippets) ? task.snippets.length : 0;
       const metadata = buildStepMetadata(task);
       const stepIndex = String(task.step_index || '').trim();
 
@@ -2349,13 +2361,14 @@ function renderPhases() {
       checkbox.setAttribute('aria-label', `Mark step ${task.title} complete`);
       snippetStack.setAttribute('hidden', '');
 
-      if (Array.isArray(task.snippets) && task.snippets.length > 0) {
+      if (snippetCount > 0) {
         node.classList.add('is-clickable');
         task.snippets.forEach((snippet, blockIdx) => {
           const snippetNode = dom.snippetTemplate.content.firstElementChild.cloneNode(true);
           const langNode = snippetNode.querySelector('.snippet-lang');
           const codeNode = snippetNode.querySelector('code');
           const copyBtn = snippetNode.querySelector('.snippet-copy');
+          const rawCode = snippet.code || '';
 
           const rawLang = (snippet.lang || '').trim();
           const lang = normalizeSnippetLanguage(rawLang);
@@ -2364,30 +2377,36 @@ function renderPhases() {
 
           snippetNode.dataset.kind = kind;
           snippetNode.dataset.lang = lang;
-          langNode.textContent = `${displayLang} ${task.snippets.length > 1 ? `#${blockIdx + 1}` : ''}`.trim();
-          codeNode.textContent = snippet.code || '';
-          highlightSnippet(codeNode, lang, snippet.code || '');
+          langNode.textContent = `${displayLang} ${snippetCount > 1 ? `#${blockIdx + 1}` : ''}`.trim();
+          renderSnippetCode(codeNode, lang, rawCode);
 
           copyBtn.addEventListener('click', (event) => {
             event.stopPropagation();
-            copyText(snippet.code || '');
+            copyText(rawCode);
             flashAutoCopied(snippetNode, 'Copied');
           });
 
+          snippetRefs.push({
+            codeNode,
+            lang,
+            rawCode
+          });
           snippetStack.appendChild(snippetNode);
         });
 
-        setChipButtonLabel(snippetBtn, `Show snippets (${task.snippets.length})`);
+        setChipButtonLabel(snippetBtn, `Show snippets (${snippetCount})`);
         snippetBtn.addEventListener('click', (event) => {
           event.stopPropagation();
+          snippetState.autoExpandedBySearch = false;
           const hidden = snippetStack.hasAttribute('hidden');
-          setSnippetVisibility(snippetStack, snippetBtn, task.snippets.length, hidden);
+          setSnippetVisibility(snippetStack, snippetBtn, snippetCount, hidden);
         });
 
         node.addEventListener('click', (event) => {
           if (shouldOpenSnippetFromStepClick(event.target)) {
+            snippetState.autoExpandedBySearch = false;
             const hidden = snippetStack.hasAttribute('hidden');
-            setSnippetVisibility(snippetStack, snippetBtn, task.snippets.length, hidden);
+            setSnippetVisibility(snippetStack, snippetBtn, snippetCount, hidden);
           }
         });
       } else {
@@ -2418,7 +2437,12 @@ function renderPhases() {
           toSearchText(phaseMetadata.brief_description),
           toSearchText(phaseMetadata.feasible_when),
           searchableSnippets
-        ].join(' '))
+        ].join(' ')),
+        snippetStack,
+        snippetBtn,
+        snippetCount,
+        snippetRefs,
+        snippetState
       };
 
       currentItems.push(ref);
@@ -2464,7 +2488,8 @@ function renderPhases() {
       phaseName,
       section,
       items: currentItems,
-      phaseDoneCheck
+      phaseDoneCheck,
+      autoExpandedBySearch: false
     });
   });
 
@@ -2524,18 +2549,72 @@ function updateProgress() {
 
 function applyFilter(value) {
   const query = normalize(value);
+  const effectiveQuery = query.length >= MIN_SEARCH_CHARS ? query : '';
+  const shouldPreviewSnippetMatches = effectiveQuery.length >= MIN_SEARCH_CHARS;
 
   itemRefs.forEach((item) => {
-    const match = !query || item.searchBlob.includes(query);
+    const match = !effectiveQuery || item.searchBlob.includes(effectiveQuery);
     item.node.classList.toggle('is-hidden', !match);
+    applySearchSnippetPreview(item, effectiveQuery, shouldPreviewSnippetMatches && match);
   });
 
   phaseRefs.forEach((phaseRef) => {
     const visible = phaseRef.items.filter((item) => !item.node.classList.contains('is-hidden')).length;
     phaseRef.section.classList.toggle('is-hidden', visible === 0);
+
+    if (!shouldPreviewSnippetMatches) {
+      if (phaseRef.autoExpandedBySearch) {
+        phaseRef.section.classList.add('is-collapsed');
+      }
+      phaseRef.autoExpandedBySearch = false;
+      return;
+    }
+
+    const isCollapsed = phaseRef.section.classList.contains('is-collapsed');
+    if (visible > 0 && isCollapsed) {
+      phaseRef.section.classList.remove('is-collapsed');
+      phaseRef.autoExpandedBySearch = true;
+    } else if (visible === 0 && phaseRef.autoExpandedBySearch && !isCollapsed) {
+      phaseRef.section.classList.add('is-collapsed');
+      phaseRef.autoExpandedBySearch = false;
+    }
   });
 
   refreshPhaseStats();
+}
+
+function applySearchSnippetPreview(itemRef, query, shouldShowMatches) {
+  if (!itemRef || !Array.isArray(itemRef.snippetRefs) || itemRef.snippetRefs.length === 0) {
+    return;
+  }
+
+  if (shouldShowMatches) {
+    itemRef.snippetRefs.forEach((snippetRef) => {
+      renderSnippetCode(snippetRef.codeNode, snippetRef.lang, snippetRef.rawCode);
+      highlightSearchMatches(snippetRef.codeNode, query);
+    });
+    itemRef.snippetState.hasSearchHighlight = true;
+
+    if (itemRef.snippetStack && itemRef.snippetBtn && itemRef.snippetStack.hasAttribute('hidden')) {
+      setSnippetVisibility(itemRef.snippetStack, itemRef.snippetBtn, itemRef.snippetCount, true);
+      itemRef.snippetState.autoExpandedBySearch = true;
+    }
+    return;
+  }
+
+  if (itemRef.snippetState && itemRef.snippetState.hasSearchHighlight) {
+    itemRef.snippetRefs.forEach((snippetRef) => {
+      renderSnippetCode(snippetRef.codeNode, snippetRef.lang, snippetRef.rawCode);
+    });
+    itemRef.snippetState.hasSearchHighlight = false;
+  }
+
+  if (itemRef.snippetState && itemRef.snippetState.autoExpandedBySearch && itemRef.snippetStack && itemRef.snippetBtn && !itemRef.snippetStack.hasAttribute('hidden')) {
+    setSnippetVisibility(itemRef.snippetStack, itemRef.snippetBtn, itemRef.snippetCount, false);
+  }
+  if (itemRef.snippetState) {
+    itemRef.snippetState.autoExpandedBySearch = false;
+  }
 }
 
 function setAllPhasesCollapsed(collapsed) {
@@ -2692,9 +2771,27 @@ function handleDocumentClick(event) {
   clearActiveGroupSelection();
 }
 
+function updateSearchHint(value) {
+  if (!dom.searchHint) {
+    return;
+  }
+
+  const queryLength = normalize(value).length;
+  if (queryLength === 0 || queryLength >= MIN_SEARCH_CHARS) {
+    dom.searchHint.textContent = '';
+    dom.searchHint.setAttribute('hidden', '');
+    return;
+  }
+
+  dom.searchHint.textContent = `Type at least ${MIN_SEARCH_CHARS} characters to search`;
+  dom.searchHint.removeAttribute('hidden');
+}
+
 function bindEvents() {
   dom.searchInput.addEventListener('input', (event) => {
-    applyFilter(event.target.value || '');
+    const value = event.target.value || '';
+    updateSearchHint(value);
+    applyFilter(value);
   });
 
   dom.expandBtn.addEventListener('click', () => setAllPhasesCollapsed(false));
@@ -2847,6 +2944,16 @@ function getSnippetKind(lang) {
   return 'generic';
 }
 
+function renderSnippetCode(codeNode, lang, rawCode) {
+  if (!codeNode) {
+    return;
+  }
+
+  codeNode.className = '';
+  codeNode.textContent = rawCode || '';
+  highlightSnippet(codeNode, lang, rawCode);
+}
+
 function highlightSnippet(codeNode, lang, rawCode) {
   if (isShellLanguage(lang)) {
     codeNode.classList.add('is-shell-highlighted');
@@ -2869,6 +2976,62 @@ function highlightSnippet(codeNode, lang, rawCode) {
 
 function isShellLanguage(lang) {
   return ['bash', 'sh', 'zsh', 'shell', 'powershell', 'dos', 'cmd', 'plaintext'].includes(lang);
+}
+
+function highlightSearchMatches(codeNode, query) {
+  if (!codeNode) {
+    return;
+  }
+
+  const needle = normalize(query);
+  if (needle.length < 3) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(codeNode, NodeFilter.SHOW_TEXT);
+  const matches = [];
+  let currentNode = walker.nextNode();
+
+  while (currentNode) {
+    if (currentNode.nodeValue && currentNode.nodeValue.toLowerCase().includes(needle)) {
+      matches.push(currentNode);
+    }
+    currentNode = walker.nextNode();
+  }
+
+  matches.forEach((textNode) => {
+    const source = textNode.nodeValue || '';
+    const sourceLower = source.toLowerCase();
+    let cursor = 0;
+    let index = sourceLower.indexOf(needle, cursor);
+
+    if (index < 0) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    while (index >= 0) {
+      if (index > cursor) {
+        fragment.appendChild(document.createTextNode(source.slice(cursor, index)));
+      }
+
+      const mark = document.createElement('mark');
+      mark.className = 'snippet-search-hit';
+      mark.textContent = source.slice(index, index + needle.length);
+      fragment.appendChild(mark);
+
+      cursor = index + needle.length;
+      index = sourceLower.indexOf(needle, cursor);
+    }
+
+    if (cursor < source.length) {
+      fragment.appendChild(document.createTextNode(source.slice(cursor)));
+    }
+
+    if (textNode.parentNode) {
+      textNode.parentNode.replaceChild(fragment, textNode);
+    }
+  });
 }
 
 function renderShellSnippet(code) {
@@ -3214,5 +3377,3 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
-
-
