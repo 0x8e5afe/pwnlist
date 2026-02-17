@@ -1,0 +1,139 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>✅ Pwnlist</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <p class="brand-kicker">The best add-on for <a href="https://0x8e5afe.github.io/pwnsheet/" target="_blank" rel="noopener noreferrer" style="color: #22c55e;">Pwnsheet</a></p>
+        <h1>Pwnlist</h1>
+      </div>
+
+      <div class="nav-wrap">
+        <nav id="phaseNav" class="phase-nav" aria-label="Checklist groups"></nav>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="hero panel">
+        <div class="hero-top">
+          <div class="hero-copy-block">
+                    <p class="hero-kicker">
+          <a class="hero-kicker-link" href="https://github.com/0x8e5afe/pwnlist" target="_blank" rel="noopener noreferrer">
+            <svg class="hero-kicker-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M8 0C3.58 0 0 3.58 0 8A8.01 8.01 0 0 0 5.47 15.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.95-.82-1.14-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.54 7.54 0 0 1 8 4.69c.68 0 1.37.09 2.01.27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
+            </svg>
+            <span>Contribute on GitHub</span>
+          </a>
+        </p>
+            <h2>Your ultimate PT <span>Checklist</span></h2>
+            <p class="hero-copy">Comprehensive penetration testing workflow from recon to reporting. Every task supports command snippets, group collapsing, live filtering, and persistent progress.</p>
+
+            <div class="hero-chips">
+              <span class="chip chip-ok" id="phaseCountChip">14 groups</span>
+              <span class="chip chip-blue" id="taskCountChip">0 steps</span>
+            </div>
+          </div>
+
+          <div class="hero-side">
+            <div class="progress-wrap">
+              <div class="progress-meta">
+                <p>Progress</p>
+                <p id="progressText" class="progress-inline">0/0 (0%)</p>
+              </div>
+              <div class="progress-actions">
+                <div class="progress-bar" aria-hidden="true">
+                  <div id="progressFill"></div>
+                </div>
+                <button id="resetBtn" class="chip chip-warn" type="button" aria-label="Reset progress" title="Reset progress">
+                  <svg class="reset-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 5a7 7 0 1 1-6.7 9H3.8A8.5 8.5 0 1 0 12 3.5V1l4 3.5-4 3.5V5Z"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="control-grid">
+              <label class="search">
+                <span>Command Search</span>
+                <input id="searchInput" type="search" placeholder="Filter commands and steps (e.g. kerberoast, smb, nmap)">
+              </label>
+              <div class="hero-buttons">
+                <button id="expandBtn" class="chip chip-outline" type="button">
+                  <svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 14.6 6.7 9.3l1.4-1.4L12 11.8l3.9-3.9 1.4 1.4L12 14.6Zm0 6-5.3-5.3 1.4-1.4L12 17.8l3.9-3.9 1.4 1.4L12 20.6Z"></path>
+                  </svg>
+                  <span class="chip-label">Expand all</span>
+                </button>
+                <button id="collapseBtn" class="chip chip-outline" type="button">
+                  <svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 9.4 6.7 14.7l1.4 1.4L12 12.2l3.9 3.9 1.4-1.4L12 9.4Zm0-6-5.3 5.3 1.4 1.4L12 6.2l3.9 3.9 1.4-1.4L12 3.4Z"></path>
+                  </svg>
+                  <span class="chip-label">Collapse all</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section id="phaseContainer" class="phase-container"></section>
+    </main>
+  </div>
+
+  <template id="taskTemplate">
+    <article class="task-card">
+      <div class="task-head">
+        <div class="task-check-label">
+          <input type="checkbox" class="task-check">
+          <span class="task-title"></span>
+        </div>
+        <div class="task-head-actions">
+          <button type="button" class="chip chip-outline task-snippet-btn">
+            <svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M8.7 16.7 4 12l4.7-4.7 1.4 1.4L6.8 12l3.3 3.3-1.4 1.4Zm6.6 0-1.4-1.4 3.3-3.3-3.3-3.3 1.4-1.4L20 12l-4.7 4.7Z"></path>
+            </svg>
+            <span class="chip-label">Show snippets</span>
+          </button>
+        </div>
+      </div>
+      <div class="task-meta"></div>
+      <div class="snippet-stack" hidden></div>
+    </article>
+  </template>
+
+  <template id="snippetTemplate">
+    <section class="snippet-block">
+      <div class="snippet-head">
+        <span class="snippet-lang">code</span>
+        <button type="button" class="chip chip-outline snippet-copy">Copy</button>
+      </div>
+      <pre><code></code></pre>
+    </section>
+  </template>
+
+  <div id="resetModal" class="modal-backdrop" hidden>
+    <div class="modal-shell" role="dialog" aria-modal="true" aria-labelledby="resetModalTitle" aria-describedby="resetModalDesc">
+      <div class="modal-card panel">
+        <p class="section-label modal-kicker">Danger Zone</p>
+        <h3 id="resetModalTitle" class="modal-title">Reset all progress?</h3>
+        <p id="resetModalDesc" class="modal-copy">This will uncheck every step and clear your saved progress.</p>
+        <div class="modal-actions">
+          <button id="resetModalCancel" class="chip chip-outline" type="button">Cancel</button>
+          <button id="resetModalConfirm" class="chip chip-warn" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
