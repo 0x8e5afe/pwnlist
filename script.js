@@ -2106,6 +2106,7 @@ const SNIPPET_LANG_ALIASES = {
 const GROUP_METADATA = {};
 const COPY_FEEDBACK_DURATION_MS = 950;
 const MIN_SEARCH_CHARS = 3;
+const SEARCH_INPUT_DEBOUNCE_MS = 80;
 
 const dom = {
   phaseNav: document.getElementById('phaseNav'),
@@ -2135,6 +2136,10 @@ let lastAutoCopiedText = '';
 let lastAutoCopiedAt = 0;
 let resetModalReturnFocusEl = null;
 let activePhaseFilter = null;
+let searchInputDebounceTimer = null;
+let lastAppliedEffectiveQuery = null;
+let searchPreviewFrameId = null;
+let searchPreviewToken = 0;
 
 enrichChecklistData(CHECKLIST_DATA);
 warnMissingFeasibleWhen(CHECKLIST_DATA);
@@ -2389,7 +2394,9 @@ function renderPhases() {
           snippetRefs.push({
             codeNode,
             lang,
-            rawCode
+            rawCode,
+            searchBlob: normalize(rawCode),
+            lastHighlightedQuery: ''
           });
           snippetStack.appendChild(snippetNode);
         });
@@ -2421,13 +2428,13 @@ function renderPhases() {
         refreshPhaseStats();
       });
 
-      const searchableSnippets = (task.snippets || []).map((s) => s.code || '').join('\n');
-      const ref = {
-        id: task.id,
-        phase: phaseName,
-        node,
-        checkbox,
-        searchBlob: normalize([
+          const searchableSnippets = (task.snippets || []).map((s) => s.code || '').join('\n');
+          const ref = {
+            id: task.id,
+            phase: phaseName,
+            node,
+            checkbox,
+            searchBlob: normalize([
           phaseName,
           task.step_index,
           task.step,
@@ -2438,6 +2445,7 @@ function renderPhases() {
           toSearchText(phaseMetadata.feasible_when),
           searchableSnippets
         ].join(' ')),
+        snippetSearchBlob: normalize(searchableSnippets),
         snippetStack,
         snippetBtn,
         snippetCount,
@@ -2550,12 +2558,19 @@ function updateProgress() {
 function applyFilter(value) {
   const query = normalize(value);
   const effectiveQuery = query.length >= MIN_SEARCH_CHARS ? query : '';
+  if (effectiveQuery === lastAppliedEffectiveQuery) {
+    return;
+  }
   const shouldPreviewSnippetMatches = effectiveQuery.length >= MIN_SEARCH_CHARS;
+  const previewWork = [];
 
   itemRefs.forEach((item) => {
     const match = !effectiveQuery || item.searchBlob.includes(effectiveQuery);
     item.node.classList.toggle('is-hidden', !match);
-    applySearchSnippetPreview(item, effectiveQuery, shouldPreviewSnippetMatches && match);
+    previewWork.push({
+      itemRef: item,
+      shouldShowMatches: shouldPreviewSnippetMatches && match
+    });
   });
 
   phaseRefs.forEach((phaseRef) => {
@@ -2581,40 +2596,107 @@ function applyFilter(value) {
   });
 
   refreshPhaseStats();
+  scheduleSearchPreview(previewWork, effectiveQuery);
+  lastAppliedEffectiveQuery = effectiveQuery;
+}
+
+function scheduleSearchPreview(previewWork, query) {
+  searchPreviewToken += 1;
+  const token = searchPreviewToken;
+
+  if (searchPreviewFrameId) {
+    window.cancelAnimationFrame(searchPreviewFrameId);
+    searchPreviewFrameId = null;
+  }
+
+  let index = 0;
+  const total = Array.isArray(previewWork) ? previewWork.length : 0;
+
+  const processChunk = () => {
+    if (token !== searchPreviewToken) {
+      return;
+    }
+
+    const startedAt = performance.now();
+    while (index < total && performance.now() - startedAt < 7) {
+      const unit = previewWork[index];
+      index += 1;
+      applySearchSnippetPreview(unit.itemRef, query, unit.shouldShowMatches);
+    }
+
+    if (index < total) {
+      searchPreviewFrameId = window.requestAnimationFrame(processChunk);
+      return;
+    }
+
+    searchPreviewFrameId = null;
+  };
+
+  searchPreviewFrameId = window.requestAnimationFrame(processChunk);
 }
 
 function applySearchSnippetPreview(itemRef, query, shouldShowMatches) {
   if (!itemRef || !Array.isArray(itemRef.snippetRefs) || itemRef.snippetRefs.length === 0) {
     return;
   }
+  const snippetState = itemRef.snippetState || { autoExpandedBySearch: false, hasSearchHighlight: false };
 
-  if (shouldShowMatches) {
-    itemRef.snippetRefs.forEach((snippetRef) => {
-      renderSnippetCode(snippetRef.codeNode, snippetRef.lang, snippetRef.rawCode);
-      highlightSearchMatches(snippetRef.codeNode, query);
-    });
-    itemRef.snippetState.hasSearchHighlight = true;
-
-    if (itemRef.snippetStack && itemRef.snippetBtn && itemRef.snippetStack.hasAttribute('hidden')) {
-      setSnippetVisibility(itemRef.snippetStack, itemRef.snippetBtn, itemRef.snippetCount, true);
-      itemRef.snippetState.autoExpandedBySearch = true;
-    }
+  if (!shouldShowMatches || !itemRef.snippetSearchBlob.includes(query)) {
+    clearSnippetSearchPreview(itemRef, snippetState);
     return;
   }
 
-  if (itemRef.snippetState && itemRef.snippetState.hasSearchHighlight) {
+  if (shouldShowMatches) {
+    let hasAnyMatch = false;
+
     itemRef.snippetRefs.forEach((snippetRef) => {
-      renderSnippetCode(snippetRef.codeNode, snippetRef.lang, snippetRef.rawCode);
+      const snippetMatches = snippetRef.searchBlob.includes(query);
+      if (!snippetMatches) {
+        if (snippetRef.lastHighlightedQuery) {
+          renderSnippetCode(snippetRef.codeNode, snippetRef.lang, snippetRef.rawCode);
+          snippetRef.lastHighlightedQuery = '';
+        }
+        return;
+      }
+
+      hasAnyMatch = true;
+      if (snippetRef.lastHighlightedQuery === query) {
+        return;
+      }
+
+      renderSnippetSearchCode(snippetRef.codeNode, snippetRef.lang, snippetRef.rawCode, query);
+      snippetRef.lastHighlightedQuery = query;
     });
-    itemRef.snippetState.hasSearchHighlight = false;
+
+    snippetState.hasSearchHighlight = hasAnyMatch;
+
+    if (hasAnyMatch && itemRef.snippetStack && itemRef.snippetBtn && itemRef.snippetStack.hasAttribute('hidden')) {
+      setSnippetVisibility(itemRef.snippetStack, itemRef.snippetBtn, itemRef.snippetCount, true);
+      snippetState.autoExpandedBySearch = true;
+    } else if (!hasAnyMatch && snippetState.autoExpandedBySearch && itemRef.snippetStack && itemRef.snippetBtn && !itemRef.snippetStack.hasAttribute('hidden')) {
+      setSnippetVisibility(itemRef.snippetStack, itemRef.snippetBtn, itemRef.snippetCount, false);
+      snippetState.autoExpandedBySearch = false;
+    }
+    return;
+  }
+}
+
+function clearSnippetSearchPreview(itemRef, snippetState) {
+  if (snippetState.hasSearchHighlight) {
+    itemRef.snippetRefs.forEach((snippetRef) => {
+      if (!snippetRef.lastHighlightedQuery) {
+        return;
+      }
+      renderSnippetCode(snippetRef.codeNode, snippetRef.lang, snippetRef.rawCode);
+      snippetRef.lastHighlightedQuery = '';
+    });
+    snippetState.hasSearchHighlight = false;
   }
 
-  if (itemRef.snippetState && itemRef.snippetState.autoExpandedBySearch && itemRef.snippetStack && itemRef.snippetBtn && !itemRef.snippetStack.hasAttribute('hidden')) {
+  if (snippetState.autoExpandedBySearch && itemRef.snippetStack && itemRef.snippetBtn && !itemRef.snippetStack.hasAttribute('hidden')) {
     setSnippetVisibility(itemRef.snippetStack, itemRef.snippetBtn, itemRef.snippetCount, false);
   }
-  if (itemRef.snippetState) {
-    itemRef.snippetState.autoExpandedBySearch = false;
-  }
+  snippetState.autoExpandedBySearch = false;
 }
 
 function setAllPhasesCollapsed(collapsed) {
@@ -2791,7 +2873,15 @@ function bindEvents() {
   dom.searchInput.addEventListener('input', (event) => {
     const value = event.target.value || '';
     updateSearchHint(value);
-    applyFilter(value);
+
+    if (searchInputDebounceTimer) {
+      window.clearTimeout(searchInputDebounceTimer);
+    }
+
+    searchInputDebounceTimer = window.setTimeout(() => {
+      applyFilter(value);
+      searchInputDebounceTimer = null;
+    }, SEARCH_INPUT_DEBOUNCE_MS);
   });
 
   dom.expandBtn.addEventListener('click', () => setAllPhasesCollapsed(false));
@@ -2954,6 +3044,48 @@ function renderSnippetCode(codeNode, lang, rawCode) {
   highlightSnippet(codeNode, lang, rawCode);
 }
 
+function renderSnippetSearchCode(codeNode, lang, rawCode, query) {
+  if (!codeNode) {
+    return;
+  }
+
+  const source = String(rawCode || '');
+  const needle = String(query || '').toLowerCase();
+
+  if (!needle || needle.length < MIN_SEARCH_CHARS) {
+    renderSnippetCode(codeNode, lang, source);
+    return;
+  }
+
+  if (isShellLanguage(lang)) {
+    codeNode.className = 'is-shell-highlighted';
+    codeNode.innerHTML = renderShellSnippet(source);
+    highlightSearchMatches(codeNode, needle);
+    return;
+  }
+
+  const lower = source.toLowerCase();
+  let cursor = 0;
+  let index = lower.indexOf(needle, cursor);
+  let html = '';
+
+  while (index >= 0) {
+    if (index > cursor) {
+      html += escapeHtml(source.slice(cursor, index));
+    }
+    html += `<mark class="snippet-search-hit">${escapeHtml(source.slice(index, index + needle.length))}</mark>`;
+    cursor = index + needle.length;
+    index = lower.indexOf(needle, cursor);
+  }
+
+  if (cursor < source.length) {
+    html += escapeHtml(source.slice(cursor));
+  }
+
+  codeNode.className = 'is-search-highlighted';
+  codeNode.innerHTML = html;
+}
+
 function highlightSnippet(codeNode, lang, rawCode) {
   if (isShellLanguage(lang)) {
     codeNode.classList.add('is-shell-highlighted');
@@ -2984,7 +3116,7 @@ function highlightSearchMatches(codeNode, query) {
   }
 
   const needle = normalize(query);
-  if (needle.length < 3) {
+  if (needle.length < MIN_SEARCH_CHARS) {
     return;
   }
 
