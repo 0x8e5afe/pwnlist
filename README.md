@@ -1,9 +1,9 @@
-# Pwnlist - Dynamic OSCP Checklist
+# Pwnlist - Interactive Checklist for Pentesters
 
 ![HTML](https://img.shields.io/badge/HTML-5-E34F26?logo=html5&logoColor=white)
 ![CSS](https://img.shields.io/badge/CSS-3-1572B6?logo=css3&logoColor=white)
 ![JavaScript](https://img.shields.io/badge/JavaScript-ES6-F7DF1E?logo=javascript&logoColor=black)
-![Steps](https://img.shields.io/badge/Checklist-130%20steps-22c55e)
+![Steps](https://img.shields.io/badge/Checklist-137%20steps-22c55e)
 
 > Disclaimer
 >
@@ -21,7 +21,7 @@ The app is fully static (`index.html` + `styles.css` + `script.js`) and runs dir
 ## Key Features
 
 - 15 phase groups covering end-to-end offensive workflow
-- 130 actionable checklist items with practical command snippets
+- 137 actionable checklist items with practical command snippets
 - Persistent progress tracking using `localStorage`
 - Group-level completion toggles and progress bar
 - Expand all / collapse all controls
